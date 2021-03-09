@@ -363,6 +363,23 @@ impl<'a> SimConnect<'a> {
         }
         Ok(())
     }
+
+    /// The SimConnect_SubscribeToSystemEvent function is used to request that a specific system event is notified to the client.
+    pub fn subscribe_to_system_event(&mut self, event_name: &str) -> Result<sys::DWORD> {
+        let event_id = self.event_id_counter;
+        self.event_id_counter += 1;
+
+        unsafe {
+            let event_name = std::ffi::CString::new(event_name).unwrap();
+            map_err(sys::SimConnect_SubscribeToSystemEvent(
+                self.handle,
+                event_id,
+                event_name.as_ptr(),
+            ))?;
+        }
+
+        Ok(event_id)
+    }
 }
 
 impl<'a> Drop for SimConnect<'a> {
@@ -405,6 +422,16 @@ macro_rules! recv {
                 SIMCONNECT_RECV_ID_SIMCONNECT_RECV_ID_CLIENT_DATA,
                 SIMCONNECT_RECV_CLIENT_DATA,
                 ClientData
+            ),
+            (
+                SIMCONNECT_RECV_ID_SIMCONNECT_RECV_ID_EVENT_FRAME,
+                SIMCONNECT_RECV_EVENT_FRAME,
+                EventFrame
+            ),
+            (
+                SIMCONNECT_RECV_ID_SIMCONNECT_RECV_ID_EVENT_FILENAME,
+                SIMCONNECT_RECV_EVENT_FILENAME,
+                EventFileName
             ),
         );
     };
