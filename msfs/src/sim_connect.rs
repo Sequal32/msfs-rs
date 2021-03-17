@@ -217,8 +217,15 @@ impl<'a> SimConnect<'a> {
         request_id: sys::SIMCONNECT_DATA_REQUEST_ID,
         object_id: sys::SIMCONNECT_OBJECT_ID,
         period: Period,
+        on_changed: bool,
     ) -> Result<()> {
         let define_id = self.get_define_id::<T>()?;
+
+        let flag = if on_changed {
+            sys::SIMCONNECT_DATA_REQUEST_FLAG_CHANGED
+        } else {
+            0
+        };
 
         unsafe {
             map_err(sys::SimConnect_RequestDataOnSimObject(
@@ -227,7 +234,7 @@ impl<'a> SimConnect<'a> {
                 define_id,
                 object_id,
                 period as sys::SIMCONNECT_PERIOD,
-                sys::SIMCONNECT_DATA_REQUEST_FLAG_CHANGED,
+                flag,
                 0,
                 0,
                 0,
