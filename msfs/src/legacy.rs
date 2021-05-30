@@ -115,6 +115,23 @@ pub fn trigger_key_event(event_id: sys::ID32, value: sys::UINT32) {
     }
 }
 
+/// get_name_of_named_variable
+pub fn get_name_of_named_variable(id: sys::ID) -> Option<String> {
+    unsafe {
+        let name_ptr = sys::get_name_of_named_variable(id);
+
+        if name_ptr == std::ptr::null() {
+            None
+        } else {
+            Some(
+                std::ffi::CStr::from_ptr(name_ptr)
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        }
+    }
+}
+
 #[doc(hidden)]
 pub trait ExecuteCalculatorCodeImpl {
     fn execute(code: &std::ffi::CStr) -> Option<Self>
