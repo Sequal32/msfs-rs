@@ -11,6 +11,7 @@ pub use msfs_derive::sim_connect_client_data_definition as client_data_definitio
 pub use msfs_derive::sim_connect_data_definition as data_definition;
 
 pub type DataXYZ = sys::SIMCONNECT_DATA_XYZ;
+pub type InitPosition = sys::SIMCONNECT_DATA_INITPOSITION;
 
 /// A trait implemented by the `data_definition` attribute.
 pub trait DataDefinition: 'static {
@@ -44,10 +45,12 @@ fn map_err(result: sys::HRESULT) -> Result<()> {
     }
 }
 
+type SimConnectCallback<'a> = dyn FnMut(&mut SimConnect, SimConnectRecv) + 'a;
+
 /// A SimConnect session. This provides access to data within the MSFS sim.
 pub struct SimConnect<'a> {
     handle: sys::HANDLE,
-    callback: Box<dyn FnMut(&mut SimConnect, SimConnectRecv) + 'a>,
+    callback: Box<SimConnectCallback<'a>>,
     data_definitions: HashMap<TypeId, sys::SIMCONNECT_DATA_DEFINITION_ID>,
     client_data_definitions: HashMap<TypeId, sys::SIMCONNECT_CLIENT_DATA_DEFINITION_ID>,
     event_id_counter: sys::DWORD,
@@ -283,7 +286,7 @@ impl<'a> SimConnect<'a> {
                 self.handle,
                 0,
                 event_id,
-                if mask { 1 } else { 0 },
+                mask.into(),
             ))?;
 
             map_err(sys::SimConnect_SetNotificationGroupPriority(
@@ -410,21 +413,109 @@ impl<'a> SimConnect<'a> {
         Ok(())
     }
 
-    /// The SimConnect_SubscribeToSystemEvent function is used to request that a specific system event is notified to the client.
-    pub fn subscribe_to_system_event(&mut self, event_name: &str) -> Result<sys::DWORD> {
-        let event_id = self.event_id_counter;
-        self.event_id_counter += 1;
+    pub fn ai_create_non_atc_aircraft(
+        &mut self,
+        container_title: &str,
+        tail_number: &str,
+        init_position: sys::SIMCONNECT_DATA_INITPOSITION,
+        request_id: sys::SIMCONNECT_DATA_REQUEST_ID,
+    ) -> Result<()> {
+        let container_title = std::ffi::CString::new(container_title).unwrap();
+        let tail_number = std::ffi::CString::new(tail_number).unwrap();
 
         unsafe {
-            let event_name = std::ffi::CString::new(event_name).unwrap();
+            map_err(sys::SimConnect_AICreateNonATCAircraft(
+                self.handle,
+                container_title.as_ptr(),
+                tail_number.as_ptr(),
+                init_position,
+                request_id,
+            ))?;
+        }
+        Ok(())
+    }
+
+    pub fn ai_create_parked_atc_aircraft(
+        &mut self,
+        container_title: &str,
+        tail_number: &str,
+        icao: &str,
+        request_id: sys::SIMCONNECT_DATA_REQUEST_ID,
+    ) -> Result<()> {
+        let container_title = std::ffi::CString::new(container_title).unwrap();
+        let tail_number = std::ffi::CString::new(tail_number).unwrap();
+        let icao = std::ffi::CString::new(icao).unwrap();
+
+        unsafe {
+            map_err(sys::SimConnect_AICreateParkedATCAircraft(
+                self.handle,
+                container_title.as_ptr(),
+                tail_number.as_ptr(),
+                icao.as_ptr(),
+                request_id,
+            ))?;
+        }
+        Ok(())
+    }
+
+    pub fn ai_remove_object(
+        &mut self,
+        object_id: sys::SIMCONNECT_OBJECT_ID,
+        request_id: sys::SIMCONNECT_DATA_REQUEST_ID,
+    ) -> Result<()> {
+        unsafe {
+            map_err(sys::SimConnect_AIRemoveObject(
+                self.handle,
+                object_id,
+                request_id,
+            ))?;
+        }
+        Ok(())
+    }
+
+    pub fn subscribe_to_system_event(
+        &mut self,
+        event_id: sys::SIMCONNECT_CLIENT_EVENT_ID,
+        system_event_name: &str,
+    ) -> Result<()> {
+        let system_event_name = std::ffi::CString::new(system_event_name).unwrap();
+        unsafe {
             map_err(sys::SimConnect_SubscribeToSystemEvent(
                 self.handle,
                 event_id,
-                event_name.as_ptr(),
+                system_event_name.as_ptr(),
             ))?;
         }
+        Ok(())
+    }
 
-        Ok(event_id)
+    pub fn unsubscribe_from_system_event(
+        &mut self,
+        event_id: sys::SIMCONNECT_CLIENT_EVENT_ID,
+    ) -> Result<()> {
+        unsafe {
+            map_err(sys::SimConnect_UnsubscribeFromSystemEvent(
+                self.handle,
+                event_id,
+            ))?;
+        }
+        Ok(())
+    }
+
+    pub fn set_system_event_state(
+        &mut self,
+        event_id: sys::SIMCONNECT_CLIENT_EVENT_ID,
+        on: bool,
+    ) -> Result<()> {
+        let state = on.into();
+        unsafe {
+            map_err(sys::SimConnect_SetSystemEventState(
+                self.handle,
+                event_id,
+                state,
+            ))?;
+        }
+        Ok(())
     }
 }
 
@@ -438,7 +529,7 @@ impl<'a> Drop for SimConnect<'a> {
 
 macro_rules! recv {
     ($V:ident) => {
-        $V!(
+        $V! {
             (
                 SIMCONNECT_RECV_ID_SIMCONNECT_RECV_ID_EXCEPTION,
                 SIMCONNECT_RECV_EXCEPTION,
@@ -468,16 +559,6 @@ macro_rules! recv {
                 SIMCONNECT_RECV_ID_SIMCONNECT_RECV_ID_CLIENT_DATA,
                 SIMCONNECT_RECV_CLIENT_DATA,
                 ClientData
-            ),
-            (
-                SIMCONNECT_RECV_ID_SIMCONNECT_RECV_ID_EVENT_FRAME,
-                SIMCONNECT_RECV_EVENT_FRAME,
-                EventFrame
-            ),
-            (
-                SIMCONNECT_RECV_ID_SIMCONNECT_RECV_ID_EVENT_FILENAME,
-                SIMCONNECT_RECV_EVENT_FILENAME,
-                EventFileName
             ),
         );
     };
@@ -538,6 +619,16 @@ impl sys::SIMCONNECT_RECV_EVENT {
     }
 }
 
+impl sys::SIMCONNECT_RECV_ASSIGNED_OBJECT_ID {
+    pub fn id(&self) -> sys::DWORD {
+        self.dwRequestID
+    }
+
+    pub fn object_id(&self) -> sys::DWORD {
+        self.dwObjectID
+    }
+}
+
 impl sys::SIMCONNECT_RECV_SIMOBJECT_DATA {
     /// The ID for this data.
     pub fn id(&self) -> sys::DWORD {
@@ -548,7 +639,8 @@ impl sys::SIMCONNECT_RECV_SIMOBJECT_DATA {
     pub fn into<T: DataDefinition>(&self, sim: &SimConnect) -> Option<&T> {
         let define_id = sim.data_definitions[&TypeId::of::<T>()];
         if define_id == self.dwDefineID {
-            Some(unsafe { &*(&self.dwData as *const sys::DWORD as *const T) })
+            // UB: creates unaligned reference
+            Some(unsafe { &*(std::ptr::addr_of!(self.dwData) as *const T) })
         } else {
             None
         }
@@ -565,7 +657,8 @@ impl sys::SIMCONNECT_RECV_CLIENT_DATA {
     pub fn into<T: ClientDataDefinition>(&self, sim: &SimConnect) -> Option<&T> {
         let define_id = sim.client_data_definitions[&TypeId::of::<T>()];
         if define_id == self._base.dwDefineID {
-            Some(unsafe { &*(&self._base.dwData as *const sys::DWORD as *const T) })
+            // UB: creates unaligned reference
+            Some(unsafe { &*(std::ptr::addr_of!(self._base.dwData) as *const T) })
         } else {
             None
         }
