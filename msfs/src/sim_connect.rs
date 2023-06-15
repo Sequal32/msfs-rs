@@ -240,6 +240,7 @@ impl<'a> SimConnect<'a> {
         request_id: sys::SIMCONNECT_DATA_REQUEST_ID,
         object_id: sys::SIMCONNECT_OBJECT_ID,
         period: Period,
+        flag: ChangedFlag,
     ) -> Result<()> {
         let define_id = self.get_define_id::<T>()?;
 
@@ -250,7 +251,7 @@ impl<'a> SimConnect<'a> {
                 define_id,
                 object_id,
                 period as sys::SIMCONNECT_PERIOD,
-                sys::SIMCONNECT_DATA_REQUEST_FLAG_CHANGED,
+                flag as sys::SIMCONNECT_DATA_REQUEST_FLAG,
                 0,
                 0,
                 0,
@@ -679,6 +680,15 @@ pub enum Period {
     SimFrame = sys::SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_SIM_FRAME as isize,
     /// Specifies that the data should be sent once every second.
     Second = sys::SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_SECOND as isize,
+}
+
+/// Specify when data is to be sent to the client.
+#[derive(Debug)]
+pub enum ChangedFlag {
+    /// Specifies that the data is to be sent only when it changes
+    Changed = sys::SIMCONNECT_DATA_REQUEST_FLAG_CHANGED as isize,
+    /// Specifies that the data is to be sent according to `Period`
+    Default = sys::SIMCONNECT_DATA_REQUEST_FLAG_DEFAULT as isize,
 }
 
 /// An allocated client data memory region. Dropping this struct will not
