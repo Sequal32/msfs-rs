@@ -644,7 +644,7 @@ macro_rules! recv {
                 SIMCONNECT_RECV_CLIENT_DATA,
                 ClientData
             ),
-        );
+        }
     };
 }
 
