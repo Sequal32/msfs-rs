@@ -26,6 +26,7 @@ pub trait ClientDataDefinition: 'static {
 }
 
 /// Rusty HRESULT wrapper.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct HResult(sys::HRESULT);
 impl std::fmt::Display for HResult {
@@ -57,7 +58,7 @@ pub struct SimConnect<'a> {
     client_data_id_counter: sys::DWORD,
 }
 
-impl<'a> std::fmt::Debug for SimConnect<'a> {
+impl std::fmt::Debug for SimConnect<'_> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         fmt.debug_struct("SimConnect").finish()
     }
@@ -148,7 +149,7 @@ impl<'a> SimConnect<'a> {
 
             // Rust may reorder fields, so padding has to be calculated as min of
             // all fields instead of the last field.
-            let mut padding = std::usize::MAX;
+            let mut padding = usize::MAX;
             for (offset, size, epsilon) in T::get_definitions() {
                 padding = padding.min(std::mem::size_of::<T>() - (offset + size));
                 unsafe {
@@ -162,7 +163,7 @@ impl<'a> SimConnect<'a> {
                     ))?;
                 }
             }
-            if padding > 0 && padding != std::usize::MAX {
+            if padding > 0 && padding != usize::MAX {
                 unsafe {
                     map_err(sys::SimConnect_AddToClientDataDefinition(
                         handle,
@@ -274,8 +275,9 @@ impl<'a> SimConnect<'a> {
     ) -> Result<sys::DWORD> {
         let event_id = self.event_id_counter;
         self.event_id_counter += 1;
+        let event_name = std::ffi::CString::new(event_name).unwrap();
+
         unsafe {
-            let event_name = std::ffi::CString::new(event_name).unwrap();
             map_err(sys::SimConnect_MapClientEventToSimEvent(
                 self.handle,
                 event_id,
@@ -317,11 +319,34 @@ impl<'a> SimConnect<'a> {
         }
     }
 
+    pub fn transmit_client_event_ex1(
+        &mut self,
+        object_id: sys::SIMCONNECT_OBJECT_ID,
+        event_id: sys::DWORD,
+        data: [sys::DWORD; 5],
+    ) -> Result<()> {
+        unsafe {
+            map_err(sys::SimConnect_TransmitClientEvent_EX1(
+                self.handle,
+                object_id,
+                event_id,
+                0,
+                0,
+                data[0],
+                data[1],
+                data[2],
+                data[3],
+                data[4],
+            ))
+        }
+    }
+
     fn get_client_data_id(&mut self, name: &str) -> Result<sys::SIMCONNECT_CLIENT_DATA_ID> {
         let client_id = self.client_data_id_counter;
         self.client_data_id_counter += 1;
+        let name = std::ffi::CString::new(name).unwrap();
+
         unsafe {
-            let name = std::ffi::CString::new(name).unwrap();
             map_err(sys::SimConnect_MapClientDataNameToID(
                 self.handle,
                 name.as_ptr(),
@@ -473,12 +498,11 @@ impl<'a> SimConnect<'a> {
         Ok(())
     }
 
-    pub fn subscribe_to_system_event(
-        &mut self,
-        event_id: sys::SIMCONNECT_CLIENT_EVENT_ID,
-        system_event_name: &str,
-    ) -> Result<()> {
+    pub fn subscribe_to_system_event(&mut self, system_event_name: &str) -> Result<sys::DWORD> {
+        let event_id = self.event_id_counter;
+        self.event_id_counter += 1;
         let system_event_name = std::ffi::CString::new(system_event_name).unwrap();
+
         unsafe {
             map_err(sys::SimConnect_SubscribeToSystemEvent(
                 self.handle,
@@ -486,7 +510,7 @@ impl<'a> SimConnect<'a> {
                 system_event_name.as_ptr(),
             ))?;
         }
-        Ok(())
+        Ok(event_id)
     }
 
     pub fn unsubscribe_from_system_event(
@@ -517,9 +541,64 @@ impl<'a> SimConnect<'a> {
         }
         Ok(())
     }
+
+    /// Load a .FLT file from disk
+    pub fn load_flight(&mut self, flight_file_path: &str) -> Result<()> {
+        let flight_file_path = std::ffi::CString::new(flight_file_path).unwrap();
+
+        unsafe {
+            map_err(sys::SimConnect_FlightLoad(
+                self.handle,
+                flight_file_path.as_ptr(),
+            ))?;
+        }
+        Ok(())
+    }
+
+    /// Save the current sim state to a .FLT file
+    pub fn save_flight(
+        &mut self,
+        flight_file_path: &str,
+        title: Option<&str>,
+        description: Option<&str>,
+    ) -> Result<()> {
+        let flight_file_path = std::ffi::CString::new(flight_file_path).unwrap();
+        let title = title.map(|x| std::ffi::CString::new(x).unwrap());
+        let description = description.map(|x| std::ffi::CString::new(x).unwrap());
+
+        unsafe {
+            map_err(sys::SimConnect_FlightSave(
+                self.handle,
+                flight_file_path.as_ptr(),
+                title
+                    .as_ref()
+                    .map(|x| x.as_ptr())
+                    .unwrap_or(std::ptr::null()),
+                description
+                    .as_ref()
+                    .map(|x| x.as_ptr())
+                    .unwrap_or(std::ptr::null()),
+                0,
+            ))?;
+        }
+        Ok(())
+    }
+
+    /// Load a .PLN file from disk
+    pub fn load_flight_plan(&mut self, flight_plan_file_path: &str) -> Result<()> {
+        let flight_plan_file_path = std::ffi::CString::new(flight_plan_file_path).unwrap();
+
+        unsafe {
+            map_err(sys::SimConnect_FlightPlanLoad(
+                self.handle,
+                flight_plan_file_path.as_ptr(),
+            ))?;
+        }
+        Ok(())
+    }
 }
 
-impl<'a> Drop for SimConnect<'a> {
+impl Drop for SimConnect<'_> {
     fn drop(&mut self) {
         unsafe {
             map_err(sys::SimConnect_Close(self.handle)).expect("SimConnect_Close");
@@ -549,6 +628,11 @@ macro_rules! recv {
                 SIMCONNECT_RECV_ID_SIMCONNECT_RECV_ID_EVENT,
                 SIMCONNECT_RECV_EVENT,
                 Event
+            ),
+            (
+                SIMCONNECT_RECV_ID_SIMCONNECT_RECV_ID_EVENT_EX1,
+                SIMCONNECT_RECV_EVENT_EX1,
+                EventEx1
             ),
             (
                 SIMCONNECT_RECV_ID_SIMCONNECT_RECV_ID_SIMOBJECT_DATA,
@@ -616,6 +700,24 @@ impl sys::SIMCONNECT_RECV_EVENT {
     /// The data for this event.
     pub fn data(&self) -> sys::DWORD {
         self.dwData
+    }
+}
+
+impl sys::SIMCONNECT_RECV_EVENT_EX1 {
+    /// The ID for this event.
+    pub fn id(&self) -> sys::DWORD {
+        self.uEventID
+    }
+
+    /// The data for this event.
+    pub fn data(&self) -> [sys::DWORD; 5] {
+        [
+            self.dwData0,
+            self.dwData1,
+            self.dwData2,
+            self.dwData3,
+            self.dwData4,
+        ]
     }
 }
 

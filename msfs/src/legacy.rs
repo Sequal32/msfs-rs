@@ -115,20 +115,17 @@ pub fn trigger_key_event(event_id: sys::ID32, value: sys::UINT32) {
     }
 }
 
-/// get_name_of_named_variable
-pub fn get_name_of_named_variable(id: sys::ID) -> Option<String> {
+/// trigger_key_event_EX1
+pub fn trigger_key_event_ex1(
+    event_id: sys::ID32,
+    value0: sys::UINT32,
+    value1: sys::UINT32,
+    value2: sys::UINT32,
+    value3: sys::UINT32,
+    value4: sys::UINT32,
+) {
     unsafe {
-        let name_ptr = sys::get_name_of_named_variable(id);
-
-        if name_ptr == std::ptr::null() {
-            None
-        } else {
-            Some(
-                std::ffi::CStr::from_ptr(name_ptr)
-                    .to_string_lossy()
-                    .into_owned(),
-            )
-        }
+        sys::trigger_key_event_EX1(event_id, value0, value1, value2, value3, value4);
     }
 }
 
