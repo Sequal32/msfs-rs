@@ -1,3 +1,0 @@
-(function() {var implementors = {};
-implementors["msfs"] = [{"text":"impl&lt;'a&gt; Drop for SimConnect&lt;'a&gt;","synthetic":false,"types":[]},{"text":"impl Drop for Context","synthetic":false,"types":[]},{"text":"impl Drop for Image","synthetic":false,"types":[]}];
-if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
